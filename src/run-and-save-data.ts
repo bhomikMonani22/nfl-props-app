@@ -10,9 +10,28 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY!;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
+interface PlayerStat {
+    player_id: string;
+    player_display_name: string;
+    position: string;
+    recent_team: string;
+    season: number;
+    week: number;
+    gameday: string;
+    passing_yards?: number;
+    passing_tds?: number;
+    rushing_yards?: number;
+    receptions?: number;
+    receiving_yards?: number;
+    fantasy_points_ppr?: number;
+}
+
 async function runAndProcessData() {
     console.log('🚀 Starting Python script to fetch NFL data...');
-    const pythonProcess = spawn('python', [path.join(process.cwd(), 'scraper', 'scrape.py')]);
+    const pythonProcess = spawn(
+        path.join(process.cwd(), '.venv', 'Scripts', 'python.exe'),
+        [path.join(process.cwd(), 'scraper', 'scrape.py')]
+    );
 
     let rawOutput = '';
     pythonProcess.stdout.on('data', (data) => { rawOutput += data.toString(); });
@@ -33,12 +52,12 @@ async function runAndProcessData() {
             const endIndex = rawOutput.indexOf(endMarker);
 
             if (startIndex === -1 || endIndex === -1) {
-                // This check is important, but let's assume the markers exist for now.
+                throw new Error('Could not find JSON markers in Python script output.');
             }
 
             const jsonData = rawOutput.substring(startIndex + startMarker.length, endIndex).trim();
 
-            const allStats: any[] = JSON.parse(jsonData);
+            const allStats: PlayerStat[] = JSON.parse(jsonData);
             if (!allStats || allStats.length === 0) {
                 console.log('No stats returned from Python script. Nothing to upload.');
                 return;
@@ -46,7 +65,13 @@ async function runAndProcessData() {
             console.log(`Processing ${allStats.length} stat entries...`);
 
             const playerUpserts = allStats
-                .map(stat => ({ player_id: stat.player_id, full_name: stat.player_display_name, position: stat.position, team: stat.recent_team, sport_id: 1 }))
+                .map(stat => ({
+                    player_id: stat.player_id,
+                    full_name: stat.player_display_name,
+                    position: stat.position,
+                    team: stat.recent_team,
+                    sport_id: 1
+                }))
                 .filter((v, i, a) => a.findIndex(t => (t.player_id === v.player_id)) === i && v.player_id);
 
             const gameStatUpserts = allStats.map(stat => ({
@@ -54,25 +79,35 @@ async function runAndProcessData() {
                 season: stat.season,
                 week: stat.week,
                 game_date: stat.gameday,
-                stats: { passing_yards: stat.passing_yards, passing_tds: stat.passing_tds, rushing_yards: stat.rushing_yards, receptions: stat.receptions, receiving_yards: stat.receiving_yards, fantasy_points_ppr: stat.fantasy_points_ppr }
+                stats: {
+                    passing_yards: stat.passing_yards,
+                    passing_tds: stat.passing_tds,
+                    rushing_yards: stat.rushing_yards,
+                    receptions: stat.receptions,
+                    receiving_yards: stat.receiving_yards,
+                    fantasy_points_ppr: stat.fantasy_points_ppr
+                }
             })).filter(stat => stat.player_id && stat.season && stat.week);
             
             console.log(`Upserting ${playerUpserts.length} unique players and ${gameStatUpserts.length} game stats...`);
             
-            const { error: playerError } = await supabase.from('players').upsert(playerUpserts, { onConflict: 'player_id' });
+            const { error: playerError } = await supabase
+                .from('players')
+                .upsert(playerUpserts, { onConflict: 'player_id' });
             if (playerError) throw new Error(`Player Upload Error: ${playerError.message}`);
             
-            const { error: gameStatError } = await supabase.from('game_stats').upsert(gameStatUpserts, { onConflict: 'player_id, season, week' });
+            const { error: gameStatError } = await supabase
+                .from('game_stats')
+                .upsert(gameStatUpserts, { onConflict: 'player_id, season, week' });
             if (gameStatError) throw new Error(`Game Stat Upload Error: ${gameStatError.message}`);
             
             console.log('🎉 Successfully uploaded all data to Supabase!');
 
-        } catch (e) {
-            // THIS IS THE CORRECTED BLOCK
+        } catch (e: unknown) {
             if (e instanceof Error) {
                 console.error('❌ Error processing or uploading data:', e.message);
             } else {
-                console.error('❌ An unknown error occurred while processing or uploading data.');
+                console.error('❌ Unknown error occurred:', e);
             }
         }
     });
