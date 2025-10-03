@@ -87,9 +87,13 @@ export default function DashboardPage() {
         if (!response.ok) throw new Error('Failed to fetch player stats');
         const data = await response.json();
         setPlayerStats(data);
-      } catch (err: any) {
+    } catch (err) {
+    if (err instanceof Error) {
         setError(err.message);
-      } finally {
+    } else {
+        setError('An unknown error occurred');
+    }
+} finally {
         setIsLoading(false);
       }
     }

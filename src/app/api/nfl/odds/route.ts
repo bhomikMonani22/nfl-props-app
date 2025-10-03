@@ -24,8 +24,9 @@ export async function GET() {
     // Return the data from the API
     return NextResponse.json(response.data);
 
-  } catch (error: any) {
-    console.error('Error fetching odds:', error.response?.data || error.message);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+    console.error('Error fetching odds:', errorMessage);
     return NextResponse.json({ error: 'Failed to fetch odds data.' }, { status: 500 });
-  }
+}
 }

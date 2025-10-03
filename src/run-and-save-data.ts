@@ -71,8 +71,12 @@ async function runAndProcessData() {
             console.log('🎉 Successfully uploaded all data to Supabase!');
 
         } catch (e) {
-            console.error('❌ Error processing or uploading data:', e);
-        }
+    if (e instanceof Error) {
+        console.error('❌ Error processing or uploading data:', e.message);
+    } else {
+        console.error('❌ An unknown error occurred while processing or uploading data.');
+    }
+}
     });
 }
 
