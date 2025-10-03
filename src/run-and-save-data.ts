@@ -12,7 +12,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
 async function runAndProcessData() {
     console.log('🚀 Starting Python script to fetch NFL data...');
-    const pythonProcess = spawn(path.join(process.cwd(), '.venv', 'Scripts', 'python.exe'), [path.join(process.cwd(), 'scraper', 'scrape.py')]);
+    const pythonProcess = spawn('python', [path.join(process.cwd(), 'scraper', 'scrape.py')]);
 
     let rawOutput = '';
     pythonProcess.stdout.on('data', (data) => { rawOutput += data.toString(); });
@@ -26,7 +26,6 @@ async function runAndProcessData() {
         console.log('✅ Python script finished. Processing and uploading data...');
         
         try {
-            // Logic to extract clean JSON, ignoring warnings
             const startMarker = '---JSON_START---';
             const endMarker = '---JSON_END---';
 
@@ -35,7 +34,6 @@ async function runAndProcessData() {
 
             if (startIndex === -1 || endIndex === -1) {
                 // This check is important, but let's assume the markers exist for now.
-                // If the script fails here, it means the python script didn't output the markers.
             }
 
             const jsonData = rawOutput.substring(startIndex + startMarker.length, endIndex).trim();
