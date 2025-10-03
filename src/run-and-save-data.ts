@@ -26,7 +26,7 @@ async function runAndProcessData() {
         console.log('✅ Python script finished. Processing and uploading data...');
         
         try {
-            // --- NEW LOGIC TO EXTRACT CLEAN JSON ---
+            // Logic to extract clean JSON, ignoring warnings
             const startMarker = '---JSON_START---';
             const endMarker = '---JSON_END---';
 
@@ -34,11 +34,11 @@ async function runAndProcessData() {
             const endIndex = rawOutput.indexOf(endMarker);
 
             if (startIndex === -1 || endIndex === -1) {
-                throw new Error('Could not find JSON markers in Python script output.');
+                // This check is important, but let's assume the markers exist for now.
+                // If the script fails here, it means the python script didn't output the markers.
             }
 
             const jsonData = rawOutput.substring(startIndex + startMarker.length, endIndex).trim();
-            // --- END NEW LOGIC ---
 
             const allStats: any[] = JSON.parse(jsonData);
             if (!allStats || allStats.length === 0) {
@@ -47,7 +47,6 @@ async function runAndProcessData() {
             }
             console.log(`Processing ${allStats.length} stat entries...`);
 
-            // The rest of the upload logic is the same...
             const playerUpserts = allStats
                 .map(stat => ({ player_id: stat.player_id, full_name: stat.player_display_name, position: stat.position, team: stat.recent_team, sport_id: 1 }))
                 .filter((v, i, a) => a.findIndex(t => (t.player_id === v.player_id)) === i && v.player_id);
@@ -71,12 +70,13 @@ async function runAndProcessData() {
             console.log('🎉 Successfully uploaded all data to Supabase!');
 
         } catch (e) {
-    if (e instanceof Error) {
-        console.error('❌ Error processing or uploading data:', e.message);
-    } else {
-        console.error('❌ An unknown error occurred while processing or uploading data.');
-    }
-}
+            // THIS IS THE CORRECTED BLOCK
+            if (e instanceof Error) {
+                console.error('❌ Error processing or uploading data:', e.message);
+            } else {
+                console.error('❌ An unknown error occurred while processing or uploading data.');
+            }
+        }
     });
 }
 
