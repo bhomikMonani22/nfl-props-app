@@ -1,103 +1,159 @@
-import Image from "next/image";
+'use client'; 
 
-export default function Home() {
+import { useState, useEffect } from 'react';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { useRouter } from 'next/navigation';
+import type { User } from '@supabase/supabase-js';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+
+// --- Data Structures ---
+interface Player {
+  player_id: string;
+  full_name: string;
+}
+interface GameStat {
+    week: number;
+    stats: { passing_yards?: number; };
+}
+interface PlayerStats {
+  full_name: string;
+  position: string;
+  team: string;
+  game_stats: GameStat[];
+}
+interface Odd {
+    home_team: string;
+    away_team: string;
+    bookmakers: { markets: { key: string; outcomes: { name: string; point?: number; }[]; }[]; }[];
+}
+
+// --- Main Dashboard Component ---
+export default function DashboardPage() {
+  const supabase = createClientComponentClient();
+  const router = useRouter();
+
+  // States for data and UI
+  const [user, setUser] = useState<User | null>(null);
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [selectedPlayerId, setSelectedPlayerId] = useState('');
+  const [playerStats, setPlayerStats] = useState<PlayerStats | null>(null);
+  const [odds, setOdds] = useState<Odd[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+  
+  // --- This is the new authentication logic ---
+  useEffect(() => {
+    async function getUserAndData() {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        router.push('/login'); // If no user, redirect to login page
+        return;
+      }
+      setUser(session.user);
+
+      // Fetch initial data only after confirming user is logged in
+      try {
+        const [playerRes, oddsRes] = await Promise.all([
+          fetch('/api/nfl/players'),
+          fetch('/api/nfl/odds')
+        ]);
+        const playerData = await playerRes.json();
+        const oddsData = await oddsRes.json();
+        
+        setPlayers(playerData);
+        setOdds(oddsData);
+
+        if (playerData.length > 0) {
+          setSelectedPlayerId(playerData[0].player_id);
+        } else {
+            setIsLoading(false);
+        }
+      } catch (e) {
+        setError('Failed to load initial data.');
+        setIsLoading(false);
+      }
+    }
+    getUserAndData();
+  }, [supabase, router]);
+  
+  // --- This useEffect is still needed to fetch stats when the player selection changes ---
+  useEffect(() => {
+    if (!selectedPlayerId || !user) return; // Don't fetch if no player is selected or user is not loaded yet
+    async function fetchPlayerStats() {
+      setIsLoading(true);
+      setError('');
+      try {
+        const response = await fetch(`/api/nfl/stats/${selectedPlayerId}`);
+        if (!response.ok) throw new Error('Failed to fetch player stats');
+        const data = await response.json();
+        setPlayerStats(data);
+      } catch (err: any) {
+        setError(err.message);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    fetchPlayerStats();
+  }, [selectedPlayerId, user]);
+  
+  // --- New logout function ---
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push('/login');
+  };
+
+  // --- "The Magic": Data Analysis (remains the same) ---
+  let hitRateData = null;
+  const propLine = 280.5;
+  if (playerStats) {
+      const totalGames = playerStats.game_stats.length;
+      const gamesOver = playerStats.game_stats.filter(g => g.stats.passing_yards && g.stats.passing_yards > propLine).length;
+      const gamesUnder = totalGames - gamesOver;
+      const hitPercentage = totalGames > 0 ? (gamesOver / totalGames) * 100 : 0;
+      hitRateData = { over: gamesOver, under: gamesUnder, percentage: hitPercentage.toFixed(0), pieData: [{ name: 'Over', value: gamesOver }, { name: 'Under', value: gamesUnder }] };
+  }
+  const chartData = playerStats?.game_stats.filter(game => game.stats?.passing_yards != null).map(game => ({ name: `Wk ${game.week}`, 'Passing Yards': game.stats.passing_yards }));
+  const COLORS = ['#ea580c', '#6b7280'];
+
+  // --- UI Rendering ---
+  if (!user) {
+    return <div className="flex min-h-screen items-center justify-center bg-black text-white">Authenticating...</div>;
+  }
+  
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+    <main className="flex min-h-screen flex-col items-center p-4 sm:p-8 bg-black text-white">
+      <div className="w-full max-w-6xl flex justify-between items-center mb-8">
+        <h1 className="text-3xl sm:text-4xl font-bold text-center">NFL Dashboard</h1>
+        <button onClick={handleLogout} className="bg-orange-600 text-white font-bold py-2 px-4 rounded-full hover:bg-orange-500 transition">Log Out</button>
+      </div>
+      
+      {/* The rest of your dashboard UI remains the same */}
+      <div className="w-full max-w-md mb-8">
+        <label htmlFor="player-select" className="block text-sm font-medium text-gray-400 mb-2">Select Player</label>
+        <select id="player-select" value={selectedPlayerId} onChange={(e) => setSelectedPlayerId(e.target.value)} className="w-full bg-gray-900 border-gray-700 text-white rounded-lg p-3 focus:ring-2 focus:ring-orange-600" disabled={!players.length}>
+          {players.map((player) => (<option key={player.player_id} value={player.player_id}>{player.full_name}</option>))}
+        </select>
+      </div>
+      <div className="w-full max-w-6xl p-4 sm:p-6 bg-gray-950 rounded-2xl border border-gray-800">
+        {isLoading && <p className="text-center">Loading stats...</p>}
+        {error && <p className="text-center text-red-500">Error: {error}</p>}
+        {playerStats && (
+            <div>
+              <h2 className="text-2xl sm:text-3xl font-semibold">{playerStats.full_name}</h2>
+              <p className="text-md sm:text-lg text-gray-400 mb-6">{playerStats.position} - {playerStats.team}</p>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  <div className="lg:col-span-2 bg-black p-4 rounded-xl border border-gray-800">
+                      <h3 className="text-lg font-semibold mb-4 text-orange-500 text-center">Passing Yards Trend (2024 Season)</h3>
+                      <div style={{ width: '100%', height: 300 }}><ResponsiveContainer><LineChart data={chartData}><CartesianGrid strokeDasharray="3 3" stroke="#374151" /><XAxis dataKey="name" stroke="#9ca3af" /><YAxis stroke="#9ca3af" /><Tooltip contentStyle={{ backgroundColor: '#1f2937', border: 'none' }} /><Legend /><Line type="monotone" dataKey="Passing Yards" stroke="#ea580c" strokeWidth={2} /></LineChart></ResponsiveContainer></div>
+                  </div>
+                  <div className="bg-black p-4 rounded-xl border border-gray-800 flex flex-col justify-center items-center">
+                      <h3 className="text-lg font-semibold text-orange-500 text-center">Hit Rate vs. Line ({propLine})</h3>
+                      {hitRateData && (<><div style={{ width: '100%', height: 180 }}><ResponsiveContainer><PieChart><Pie data={hitRateData.pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={60} fill="#8884d8">{hitRateData.pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}</Pie><Tooltip contentStyle={{ backgroundColor: '#1f2937', border: 'none' }} /></PieChart></ResponsiveContainer></div><p className="text-4xl font-bold mt-4">{hitRateData.percentage}%</p><p className="text-gray-400">Over in {hitRateData.over} of {hitRateData.over + hitRateData.under} games</p></>)}
+                  </div>
+              </div>
+            </div>
+        )}
+      </div>
+    </main>
   );
 }
