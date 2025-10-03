@@ -1,55 +1,50 @@
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { NextResponse } from 'next/server';
 
-// Note: In Next.js API routes, process.env automatically reads from your .env.local file.
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY!;
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_KEY!
+);
 
 export async function GET(
-  request: Request,
+  request: NextRequest,
   { params }: { params: { playerId: string } }
 ) {
   try {
-    const playerId = params.playerId;
+    const { playerId } = params;
 
-    if (!playerId) {
-      return NextResponse.json({ error: 'Player ID is required' }, { status: 400 });
-    }
-
-    console.log(`Fetching data for player: ${playerId}`);
-
-    // Fetch the player's general info and their game stats in one query
-    const { data, error } = await supabase
+    const { data: player, error: playerError } = await supabase
       .from('players')
-      .select(`
-        full_name,
-        position,
-        team,
-        game_stats (
-          season,
-          week,
-          game_date,
-          stats
-        )
-      `)
+      .select('full_name, position, team')
       .eq('player_id', playerId)
-      .single(); // .single() returns one object instead of an array
+      .single();
 
-    if (error) {
-      console.error('Supabase error:', error.message);
-      return NextResponse.json({ error: `Player not found or database error: ${error.message}` }, { status: 404 });
+    if (playerError || !player) {
+      return NextResponse.json({ error: 'Player not found' }, { status: 404 });
     }
 
-    if (!data) {
-        return NextResponse.json({ error: 'Player not found' }, { status: 404 });
+    const { data: gameStats, error: gameStatsError } = await supabase
+      .from('game_stats')
+      .select('season, week, game_date, stats')
+      .eq('player_id', playerId);
+
+    if (gameStatsError) {
+      return NextResponse.json(
+        { error: `Error fetching game stats: ${gameStatsError.message}` },
+        { status: 500 }
+      );
     }
 
-    return NextResponse.json(data);
-
-  } catch (e) {
-    console.error('Unexpected error:', e);
-    return NextResponse.json({ error: 'An unexpected error occurred' }, { status: 500 });
+    return NextResponse.json({
+      full_name: player.full_name,
+      position: player.position,
+      team: player.team,
+      game_stats: gameStats ?? [],
+    });
+  } catch (e: unknown) {
+    if (e instanceof Error) {
+      return NextResponse.json({ error: e.message }, { status: 500 });
+    }
+    return NextResponse.json({ error: 'Unknown error' }, { status: 500 });
   }
 }
